@@ -1,0 +1,30 @@
+{
+  "UniformDataTypeDeclarations": [
+    {
+      "TypeId": "io.github.shaliuxin.vectorcraft.hmos.svg",
+      "BelongingToTypes": [
+        "general.text"
+      ],
+      "FilenameExtensions": [
+        ".svg",
+        ".svgz",
+        ".pdf",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".ai",
+        ".eps",
+        ".ps"
+      ],
+      "MIMETypes": [
+        "image/svg+xml",
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "application/postscript"
+      ],
+      "Description": "VectorCraft vector drawing",
+      "ReferenceURL": ""
+    }
+  ]
+}

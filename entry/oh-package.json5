@@ -1,0 +1,11 @@
+{
+  "name": "entry",
+  "version": "0.1.0",
+  "description": "VectorCraft HarmonyOS entry module",
+  "main": "",
+  "author": "",
+  "license": "MIT OR Apache-2.0",
+  "dependencies": {
+    "libvectorcraft.so": "file:./src/main/cpp/types/libvectorcraft"
+  }
+}

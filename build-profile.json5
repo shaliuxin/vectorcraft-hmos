@@ -1,0 +1,74 @@
+{
+  // 包名铁律：vectorcraft 用专属 bundleName io.github.shaliuxin.vectorcraft.hmos，
+  // 其签名 profile（.p7b）绑定 bundleName + 设备 UDID，绝不复用 wordcraft/gridcraft/solidcraft 的产物。
+  // 注意：下方 material 指向 AGC 为本包名签发的调试 profile。vectorcraft 是新包名，首次须在
+  // DevEco Studio「File → Project Structure → Signing Configs → 自动签名」为
+  // io.github.shaliuxin.vectorcraft.hmos 重新签发（DevEco 会生成 default_vectorcraft-hmos_*.p7b
+  // 并回写此处的 certpath/profile/storeFile/口令 hex）；直接照抄 gridcraft 的 material 会因包名
+  // 绑定不符而签名失败。
+  // 当前 material 是 DevEco「File → Project Structure → Signing Configs → 自动签名」
+  // 于 2026-11-07 为本包名签发的 AGC 调试 profile（issuer=app_gallery，绑定本机设备 UDID），
+  // 由 DevEco 自动回写；可直接产出可安装的签名 HAP。
+  // 备选离线方案：scripts/make_vectorcraft_signing.sh 生成 signing/ 下的本地 CA 链
+  // （issuer=pki_internal），只能验证打包链路，真机安装会报 9568257。切回它时需把
+  // material 四件套路径改回 signing/，并用 scripts/encrypt_pwd.js 重生成口令 hex ——
+  // hvigor DecipherUtil 用 storeFile 同级目录的 material/ 解密，不是 ~/.ohos/config/material。
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          // 首次构建前：在 DevEco Studio「File → Project Structure → Signing Configs → 自动签名」
+          // 为你的 bundleName（io.github.shaliuxin.vectorcraft.hmos）重新签发，
+          // DevEco 会用你本机的真实四件套自动覆盖下方占位符，即可产出可安装的签名 HAP。
+          // 安全说明：仓库内刻意不保留任何签名口令、本机绝对路径、或绑定设备 UDID 的 profile 名。
+          "certpath": "<PLACEHOLDER: DevEco auto-signing will fill>",
+          "keyAlias": "debugKey",
+          "keyPassword": "<PLACEHOLDER: DevEco auto-signing will fill>",
+          "profile": "<PLACEHOLDER: DevEco auto-signing will fill>",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "<PLACEHOLDER: DevEco auto-signing will fill>",
+          "storePassword": "<PLACEHOLDER: DevEco auto-signing will fill>"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "26.0.0",
+        "compatibleSdkVersion": "26.0.0",
+        "runtimeOS": "HarmonyOS"
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ],
+    "capabilities": [
+      {
+        "bundleName": "io.github.shaliuxin.vectorcraft.hmos",
+        "config": []
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}
