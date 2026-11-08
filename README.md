@@ -14,7 +14,7 @@
 ## 架构（三层）
 ArkTS（`EntryAbility` + `XComponent`）→ C++ NAPI 桥（产物 `libvectorcraft.so`，NAPI 模块名 `vectorcraft`）→ Rust 适配层（`native/rust`，静态库 `libvectorcraft_hmos.a`）。
 
-- 上游 `vectorcraft/crates/*` 以 **path 依赖**引入（见 `native/rust/Cargo.toml`，路径 `../../vectorcraft/crates/*`）。
+- 上游 `vectorcraft/crates/*` 以 **path 依赖**引入（见 `native/rust/Cargo.toml`，从该文件出发的路径为 `../../../vectorcraft/crates/*`，即仓库同级的上游目录）。
 - `wgpu-hal` 的 GLES 补丁 vendored 在 `third_party/wgpu-hal-30.0.1`（自包含）。
 - FFI 边界：13 个 `vc_*` 符号 —— `vc_init` / `vc_input` / `vc_reply` / `vc_open` / `vc_drop` / `vc_drop_file` / `vc_command` / `vc_attach` / `vc_resize` / `vc_detach` / `vc_frame` / `vc_active` / `vc_close`。
 
@@ -35,6 +35,19 @@ ArkTS（`EntryAbility` + `XComponent`）→ C++ NAPI 桥（产物 `libvectorcraf
    ├── vectorcraft/       # 上游 storytold/vectorcraft
    └── vectorcraft-hmos/  # 本仓库
    ```
+   本仓库当前对齐上游 `main` 提交 `0a702cc0a5f36346b420b7effc5698ef36b05b2d`
+   （2026-11-08，其 workspace 版本仍为 `0.21.0`，故本仓库 `versionName` 保持 `0.21.0`）。
+   path 依赖从 `native/rust/Cargo.toml` 出发为 `../../../vectorcraft/crates/*`。
+
+   **升级上游时**：`[patch]` 只对 workspace 根生效，而本仓库的 Rust 适配层是独立
+   workspace，所以必须把上游根 `Cargo.toml` 的 `[patch.crates-io]` **整段**同步到
+   `native/rust/Cargo.toml`，再重生成锁：
+   ```bash
+   cargo generate-lockfile --manifest-path native/rust/Cargo.toml
+   ```
+   随后 `scripts/build_native.sh` 会以 `--locked` 构建。上游 `0a702cc0` 相对初版新增了
+   `linesweeper`（craft-libs rev `481f66d2…`）这一条 patch，漏抄会导致 pathops 依赖解析到
+   crates.io 的未打补丁版本。
 2. **DevEco Studio**（HarmonyOS NEXT / API 26）及其 OHOS NDK。
 3. **Rust**：安装两个目标 `rustup target add aarch64-unknown-linux-ohos x86_64-unknown-linux-ohos`。
 
@@ -46,6 +59,10 @@ bash scripts/build_native.sh
 # 2) 首次签名：在 DevEco「File → Project Structure → Signing Configs → 自动签名」
 #    为 bundleName io.github.shaliuxin.vectorcraft.hmos 签发，
 #    DevEco 会用你本机的真实四件套回写 build-profile.json5 的占位符。
+#    注意：公开仓库里的 build-profile.json5 是**占位符版**，本地每次重新打包前都要先
+#    临时恢复真实 material（本机可存为 signing/build-profile.local.json5，该目录已被
+#    .gitignore 排除），否则 SignHap 报 00303107 Invalid storeFile value；
+#    推送前务必把占位符版还原，避免把 AGC 签名口令写进公开仓库。
 
 # 3) 打包 + 签名 HAP（DevEco 里 Run，或 hvigor CLI）
 #    <DevEco>/tools/node/node.exe <DevEco>/tools/hvigor/bin/hvigorw.js \
