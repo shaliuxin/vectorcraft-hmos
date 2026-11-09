@@ -1,5 +1,5 @@
 //! 平台输入 → egui 事件。首版移植聚焦指针/触摸/滚轮/键盘；手写笔（pen）留作后续工作。
-use egui::{Event, Key, Modifiers, PointerButton, Pos2, TouchDeviceId, TouchId, TouchPhase};
+use egui::{Event, ImeEvent, Key, Modifiers, PointerButton, Pos2, TouchDeviceId, TouchId, TouchPhase};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -40,6 +40,9 @@ pub struct Input {
     pub shift: bool,
     #[serde(default)]
     pub alt: bool,
+    /// IME 子操作：commit / preedit / delete / enter（仅 kind == "ime" 时使用）。
+    #[serde(default)]
+    pub op: String,
 }
 
 #[derive(Default)]
@@ -74,6 +77,12 @@ impl State {
     }
 
     pub fn push(&mut self, input: Input, scale: f32, events: &mut Vec<Event>) {
+        // 软键盘中文输入法经 HarmonyOS InputMethod 框架回传（commit / preedit / delete / enter），
+        // 不经原始按键事件，也不带坐标——必须在坐标/缩放校验之前处理，否则会被当成无效输入丢弃。
+        if input.kind == "ime" {
+            push_ime(self, input, events);
+            return;
+        }
         if input.kind == "blur" {
             self.cancel(events);
             return;
@@ -254,6 +263,56 @@ impl State {
             }
             _ => {}
         }
+    }
+}
+
+/// 软键盘 IME 回传的四个子操作 → egui 的 `Event::Ime` / 按键事件。
+///
+/// - `commit`：已确认上屏的文本（中文选词结果），必须原样交给 egui；
+/// - `preedit`：拼音组合态（空串表示清除组合）；
+/// - `delete`：IME 自己的退格（组合态内已被键盘处理，这里只在非组合态收到）；
+/// - `enter`：软键盘回车。
+fn push_ime(state: &mut State, input: Input, events: &mut Vec<Event>) {
+    match input.op.as_str() {
+        "commit" => {
+            if !input.text.is_empty() {
+                events.push(Event::Ime(ImeEvent::Commit(input.text)));
+            }
+        }
+        "preedit" => {
+            // 空串代表组合结束，egui 收到空 Preedit 会清掉已有组合态。
+            events.push(Event::Ime(ImeEvent::Preedit {
+                text: input.text,
+                active_range_chars: None,
+            }));
+        }
+        "delete" => {
+            if let Ok(n) = input.text.parse::<u32>() {
+                for _ in 0..n.min(64) {
+                    for &pressed in &[true, false] {
+                        events.push(Event::Key {
+                            key: Key::Backspace,
+                            physical_key: Some(Key::Backspace),
+                            pressed,
+                            repeat: false,
+                            modifiers: state.modifiers,
+                        });
+                    }
+                }
+            }
+        }
+        "enter" => {
+            for &pressed in &[true, false] {
+                events.push(Event::Key {
+                    key: Key::Enter,
+                    physical_key: Some(Key::Enter),
+                    pressed,
+                    repeat: false,
+                    modifiers: state.modifiers,
+                });
+            }
+        }
+        _ => {}
     }
 }
 

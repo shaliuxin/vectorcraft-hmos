@@ -73,6 +73,18 @@ bash scripts/build_native.sh
 ## 签名说明
 `build-profile.json5` 的 `material` 四件套为**占位符**——本仓库刻意不保留签名口令、本机绝对路径，或绑定设备 UDID 的 profile 名。首次构建前请在 DevEco 自动签名（推荐）；`scripts/make_vectorcraft_signing.sh` 可生成本地 CA 链（`issuer=pki_internal`），**仅用于验证打包链路，真机安装会报 `9568257`**。
 
+## 中文输入法（IME，2026-11-09 真机通过）
+
+HarmonyOS 官方「自定义编辑框」方案：1×1 透明锚点 `Text('').id('vectorcraft-ime-anchor').focusable(true)`
+→ `requestFocus` → `await inputMethod.getController().attach(true, textConfig)` → **attach 成功后**才注册
+`insertText/setPreviewText/finishTextPreview/deleteLeft/sendFunctionKey`（提前注册抛 `12800009 detached`）。
+导入必须是 `import { inputMethod } from '@kit.IMEKit';`（命名导入），XComponent 已去掉 `.focusOnTouch(true)`。
+真机日志：`VectorCraft native ime: show` → `IME attached` → `listeners bound`。
+
+> PC 多窗口 + 外接物理键盘时系统不自动展开面板（系统「备忘录」同样只有悬浮工具栏），
+> 需点右下悬浮栏 ⌨ —— 系统策略，非应用缺陷。
+
+
 ## License
 MIT OR Apache-2.0，与上游一致（见 [`LICENSE-MIT`](LICENSE-MIT) / [`LICENSE-APACHE`](LICENSE-APACHE)）。
 上游版权归 ArtCraft Team 及 VectorCraft contributors 所有；第三方素材清单见 [`NOTICE`](NOTICE)。
