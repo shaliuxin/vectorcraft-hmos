@@ -15,8 +15,10 @@
 //!   "no file reader"，`io/save.rs` 同理），不像 gridcraft 直接 `std::fs`。OHOS 沙箱路径可被
 //!   `std::fs` 读写，故这里以 `std::fs` 实现 read/write/exists/read_head，打开/另存为经 bridge
 //!   弹 ArkTS 选择器拿沙箱路径（桌面式，download 留空）。
-//! - 关闭：vectorcraft 自己处理未保存文档（`unsaved::close_all` + `CancelClose`），无 `allow_close`
-//!   字段，`close_action` 只看 `ViewportCommand`。
+//! - 关闭：vectorcraft 自己处理未保存文档（`unsaved::close_all` + `CancelClose`），没有 gridcraft
+//!   的 `allow_close` 字段；用户选保存/丢弃后由 `app.ui.status == "quit"` 表达「可以关窗」（桌面
+//!   宿主 `apps/vectorcraft/src/app.rs:159` 据此发 `ViewportCommand::Close`）。鸿蒙宿主没有 eframe
+//!   那层包装，须自己锁存该信号并再走一次 `ViewportEvent::Close`，最后才 notify("close")。
 #![allow(clippy::needless_lifetimes)]
 mod appearance;
 mod bridge;
@@ -476,6 +478,11 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
     let mut events: Vec<egui::Event> = Vec::new();
     let mut input_state = input::State::default();
     let mut close = false;
+    // 上游 `ui.status == "quit"` 的锁存：用户在保存框选保存 / 丢弃后允许关窗（等价于
+    // gridcraft 的 `allow_close`）。一旦观察到就保持，避免状态栏刷新把信号冲掉。
+    let mut quit_requested = false;
+    // 已通知宿主关窗：不再重复发 notify，也不再处理新的关闭请求。
+    let mut terminating = false;
     // 软键盘显隐：egui 的 TextEdit 获得焦点时会把 `platform_output.ime` 置为 Some，
     // 失焦置 None。只在**状态变化**时通知 ArkTS，避免每帧刷消息。
     let mut ime_shown = false;
@@ -643,13 +650,24 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
                             commands.extend(v.commands.clone());
                             repaint_delay = Some(v.repaint_delay);
                         }
-                        match close_action(validating_close, &commands) {
-                            CloseAction::Confirm => bridge::notify(0, "close", "", &[]),
-                            CloseAction::Request => {
-                                close = true;
-                                deadline = Some(Instant::now());
+                        // 上游把「保存 / 丢弃已完成」写进 ui.status（桌面宿主据此发
+                        // ViewportCommand::Close，见 apps/vectorcraft/src/app.rs:159）。鸿蒙宿主
+                        // 没有 eframe 包装层，必须自己锁存该信号并再请求一次关窗，否则用户点完
+                        // Save / Don't Save 后窗口永远不关。CancelClose（有未保存 / 文件选择器
+                        // 占用）优先级最高，交给上游的「是否保存」对话框；用户取消则不发通知。
+                        quit_requested |= app.ui.status == "quit";
+                        if !terminating {
+                            match close_action(validating_close, &commands, quit_requested) {
+                                CloseAction::Confirm => {
+                                    bridge::notify(0, "close", "", &[]);
+                                    terminating = true;
+                                }
+                                CloseAction::Request => {
+                                    close = true;
+                                    deadline = Some(Instant::now());
+                                }
+                                CloseAction::Cancel | CloseAction::None => {}
                             }
-                            CloseAction::Cancel | CloseAction::None => {}
                         }
                         let painted = render.paint(&ctx, output)?;
                         if first_frame_marker(painted) {
@@ -710,12 +728,19 @@ enum CloseAction {
 }
 
 #[cfg(target_env = "ohos")]
-fn close_action(validating: bool, commands: &[egui::ViewportCommand]) -> CloseAction {
+fn close_action(
+    validating: bool,
+    commands: &[egui::ViewportCommand],
+    quit_requested: bool,
+) -> CloseAction {
     if commands.contains(&egui::ViewportCommand::CancelClose) {
+        // 上游还有未保存文档或文件选择器占用：暂缓关闭，等用户在「是否保存」里作答。
         CloseAction::Cancel
     } else if validating {
+        // 本帧已注入 ViewportEvent::Close 且上游没有 CancelClose：无未保存，放行。
         CloseAction::Confirm
-    } else if commands.contains(&egui::ViewportCommand::Close) {
+    } else if commands.contains(&egui::ViewportCommand::Close) || quit_requested {
+        // egui 请求关闭，或用户已选保存 / 丢弃（ui.status == "quit"）：下一帧再验证一次。
         CloseAction::Request
     } else {
         CloseAction::None
