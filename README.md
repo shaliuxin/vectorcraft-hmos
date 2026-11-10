@@ -35,8 +35,9 @@ ArkTS（`EntryAbility` + `XComponent`）→ C++ NAPI 桥（产物 `libvectorcraf
    ├── vectorcraft/       # 上游 storytold/vectorcraft
    └── vectorcraft-hmos/  # 本仓库
    ```
-   本仓库当前对齐上游 `main` 提交 `0a702cc0a5f36346b420b7effc5698ef36b05b2d`
-   （2026-11-08，其 workspace 版本仍为 `0.21.0`，故本仓库 `versionName` 保持 `0.21.0`）。
+   本仓库当前对齐上游**正式版 v0.23.0**，提交 `5d0e892e2419f63bc0ea3c743ddff2e81e15fd3a`
+   （2026-11-09 发布；其 workspace 版本为 `0.23.0`，故本仓库 `versionName` = `0.23.0`、
+   `versionCode` = `23000`）。
    path 依赖从 `native/rust/Cargo.toml` 出发为 `../../../vectorcraft/crates/*`。
 
    **升级上游时**：`[patch]` 只对 workspace 根生效，而本仓库的 Rust 适配层是独立
@@ -45,9 +46,10 @@ ArkTS（`EntryAbility` + `XComponent`）→ C++ NAPI 桥（产物 `libvectorcraf
    ```bash
    cargo generate-lockfile --manifest-path native/rust/Cargo.toml
    ```
-   随后 `scripts/build_native.sh` 会以 `--locked` 构建。上游 `0a702cc0` 相对初版新增了
-   `linesweeper`（craft-libs rev `481f66d2…`）这一条 patch，漏抄会导致 pathops 依赖解析到
-   crates.io 的未打补丁版本。
+   随后 `scripts/build_native.sh` 会以 `--locked` 构建。v0.23.0 的 `[patch.crates-io]` 与
+   `0a702cc0` 完全一致（含 `linesweeper`，craft-libs rev `481f66d2…`）；漏抄会让 pathops
+   解析到 crates.io 的未打补丁版本。v0.23.0 还新增了 `jxl-oxide` / `zune-jpegxl` 依赖、
+   `craft-update` rev 改为 `1b34eba…`，因此**必须重生成锁**（本次 `[[package]]` 段 443 → 464）。
 2. **DevEco Studio**（HarmonyOS NEXT / API 26）及其 OHOS NDK。
 3. **Rust**：安装两个目标 `rustup target add aarch64-unknown-linux-ohos x86_64-unknown-linux-ohos`。
 

@@ -110,8 +110,8 @@ openssl x509 -in app-leaf.pem -outform DER -out app-leaf.der
 APP_B64=$(python -c "import base64;print(base64.urlsafe_b64encode(open('app-leaf.der','rb').read()).decode())")
 cat > app-profile.json <<EOF
 {
-  "version-name": "0.16.0",
-  "version-code": 16000,
+  "version-name": "0.23.0",
+  "version-code": 23000,
   "uuid": "6c1a0e2b-4f3d-4b7a-9c2e-vectorcraft01",
   "validity": { "not-before": $NB, "not-after": $NA },
   "type": "debug",
