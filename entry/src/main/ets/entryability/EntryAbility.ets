@@ -3,7 +3,6 @@ import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit
 import { window } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { publishSystemTheme, systemThemeFromColorMode } from '../SystemTheme';
-import { requestWindowClose, resetCloseGuard } from '../closeGuard';
 
 class SystemThemeInput {
   kind: string = 'system_theme';
@@ -24,7 +23,6 @@ export default class EntryAbility extends UIAbility {
   }
 
   onCreate(want: Want, _launchParam: AbilityConstant.LaunchParam): void {
-    resetCloseGuard();
     this.syncSystemTheme(this.context.config?.colorMode);
     // 冷启动的「打开方式」：want.uri 只出现在 onCreate，必须写进 AppStorage 让页面消费；
     // 只处理 onNewWant 会让首次从文件管理器点开的应用丢掉文件。
@@ -54,20 +52,23 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    // 系统标题栏的 X 由窗口管理器直接执行，不经过 egui；首版点 X 会直接退出、
-    // 不弹「是否保存」。这里把系统关闭请求拦下来，转给 Rust 已有的
-    // ViewportEvent::Close 流程（native.close → 未保存确认 → notify "close"）。
-    // 依据 craft 检查清单 §8：只订阅窗口级 windowWillClose（@since 15，回调必须返回
-    // Promise<boolean>），不与 windowStageClose / onPrepareToTerminate 同时注册以免优先级冲突。
-    // true = 拦截（窗口保留），false = 放行；terminateSelf 属其它关闭方式，不会再触发此事件。
+    // 系统标题栏的 X 由窗口管理器直接执行，不经过 egui；不拦下来就会绕过上游的
+    // 「是否保存」确认直接销毁宿主。与 GridCraft / DeckCraft 真机验证过的写法一致：
+    // 在窗口级 windowWillClose 里**无条件**调 native.close() 并返回 true 拦截本次关闭，
+    // 由 Rust 检查未保存文档；Rust 确认后 notify("close") → Index.receive 主动 terminateSelf
+    // （terminateSelf 不会再触发 windowWillClose）。用户点 Cancel 时 Rust 不发通知，窗口保留。
+    // SDK 声明 `Callback<void, Promise<boolean>>`（@since 15）：true = 拦截，false = 放行。
+    // 只订阅窗口级 event，不与 windowStageClose / onPrepareToTerminate 同时注册（优先级冲突）。
     try {
       const mainWindow = windowStage.getMainWindowSync();
       mainWindow.on('windowWillClose', async (): Promise<boolean> => {
+        console.info('VectorCraft window X: intercepted, forwarding to native close validation');
         try {
-          return requestWindowClose();
+          native.close();
+          return true;
         } catch (error) {
-          // native 未就绪时不能把窗口锁死：放行系统关闭作为兜底。
-          console.warn(`VectorCraft close guard unavailable: ${(error as Error).message}`);
+          // native 未就绪时不能把窗口锁死：放行系统关闭作为兜底（保持旧行为）。
+          console.warn(`VectorCraft native close unavailable: ${(error as Error).message}`);
           return false;
         }
       });

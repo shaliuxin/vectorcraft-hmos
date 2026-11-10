@@ -6,7 +6,6 @@ import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { display } from '@kit.ArkUI';
 import { inputMethod } from '@kit.IMEKit';
 import { SYSTEM_THEME_DARK, SYSTEM_THEME_LIGHT } from '../SystemTheme';
-import { allowConfirmedClose, setCloseRequest } from '../closeGuard';
 
 // Mirrors the Rust `Config` deserialized in native/rust/src/lib.rs.
 class NativeConfig {
@@ -129,7 +128,6 @@ struct Index {
     this.alive = false;
     this.generation++;
     this.initialized = false;
-    setCloseRequest(null);
     native.active(false);
   }
 
@@ -165,9 +163,6 @@ struct Index {
         (id: number, message: string, data: ArrayBuffer): void => { this.receive(id, message, data); });
       this.initialized = true;
       this.failure = '';
-      // 关闭守卫：系统关窗被 closeGuard 拦截后，经此处理器转成 native.close()
-      // 交给 Rust 检查未保存文档；Rust 确认后才通知宿主真正关闭。
-      setCloseRequest((): void => { native.close(); });
     } catch (error) {
       if (this.alive && generation === this.generation) { this.failure = (error as Error).message; }
     }
@@ -243,8 +238,9 @@ struct Index {
       this.failure = '';
       if (request.kind === 'first_frame') { this.revealEditor(); }
     } else if (request.kind === 'close') {
-      // Rust 已确认无未保存改动（或用户已选保存 / 丢弃）：放行关闭守卫后主动结束 Ability。
-      allowConfirmedClose();
+      // Rust 已确认无未保存改动（或用户已选保存 / 丢弃）：主动结束 Ability。
+      // terminateSelf 不经过 windowWillClose，无需额外的「已确认」放行标志。
+      console.info('VectorCraft native close confirmed: terminating ability');
       this.context.terminateSelf();
     } else if (request.kind === 'url') {
       this.context.startAbility({ action: 'ohos.want.action.viewData', uri: request.text })

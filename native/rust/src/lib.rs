@@ -15,10 +15,15 @@
 //!   "no file reader"，`io/save.rs` 同理），不像 gridcraft 直接 `std::fs`。OHOS 沙箱路径可被
 //!   `std::fs` 读写，故这里以 `std::fs` 实现 read/write/exists/read_head，打开/另存为经 bridge
 //!   弹 ArkTS 选择器拿沙箱路径（桌面式，download 留空）。
-//! - 关闭：vectorcraft 自己处理未保存文档（`unsaved::close_all` + `CancelClose`），没有 gridcraft
-//!   的 `allow_close` 字段；用户选保存/丢弃后由 `app.ui.status == "quit"` 表达「可以关窗」（桌面
-//!   宿主 `apps/vectorcraft/src/app.rs:159` 据此发 `ViewportCommand::Close`）。鸿蒙宿主没有 eframe
-//!   那层包装，须自己锁存该信号并再走一次 `ViewportEvent::Close`，最后才 notify("close")。
+//! - 关闭：vectorcraft 在 `VectorcraftApp::tick` 里读 `ctx.input(|i| i.viewport().close_requested())`
+//!   （`crates/ui-egui/src/app.rs:345`），有未保存文档就发 `ViewportCommand::CancelClose` 并弹
+//!   `saveChanges`。**宿主必须像 eframe 的 `App::logic`、web shell 的 `logic`、GridCraft 的
+//!   `editor_frame` 那样，把 tick 放在 `ctx.run_ui` 的 pass 内、`ui()` 之前**：上游注释明确写了
+//!   logic-only pass 读的是「上一帧已显示帧」的 input。若把 tick 放在 run_ui 之外，
+//!   `ViewportEvent::Close` 永远慢一帧，宿主当帧收不到 CancelClose 就误判「无未保存」，直接
+//!   notify("close") → terminateSelf()，窗口静默关闭、不弹保存框（真机实测过的故障）。
+//!   保存/丢弃完成后上游写 `app.ui.status == "quit"`（桌面宿主 `apps/vectorcraft/src/app.rs:159`
+//!   据此发 `ViewportCommand::Close`），鸿蒙宿主没有 eframe 包装层，须自己锁存该信号后才放行。
 #![allow(clippy::needless_lifetimes)]
 mod appearance;
 mod bridge;
@@ -497,7 +502,7 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
                 Ok(m) => m,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     deadline = None;
-                    if active && visible && render.attached() {
+                    if (active || close) && visible && render.attached() {
                         unsafe { vc_request_vsync() };
                     }
                     continue;
@@ -581,12 +586,22 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
                         deadline = Some(Instant::now());
                     }
                     Message::Close => {
+                        // 系统 X 已被 ArkTS 的 windowWillClose 拦下。窗口管理器在关窗流程里
+                        // 可能先让窗口失焦（onBackground → native.active(false)），若不管，
+                        // Frame 分支会直接跳过，保存框永远画不出来也点不到。
                         bridge::resume();
+                        active = true;
                         close = true;
+                        bridge::notify(
+                            0,
+                            "diagnostic",
+                            "close guard: system X forwarded, validating unsaved documents",
+                            &[],
+                        );
                         deadline = Some(Instant::now());
                     }
                     Message::Wake(delay) => {
-                        if active && visible {
+                        if (active || close) && visible {
                             if let Some(next) = Instant::now().checked_add(delay) {
                                 deadline = Some(deadline.map_or(next, |d| d.min(next)));
                             }
@@ -603,7 +618,9 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
                         deadline = Some(Instant::now());
                     }
                     Message::Frame => {
-                        if !active || !visible {
+                        // 关窗校验进行中：即使窗口已失焦也要出帧，否则「是否保存」对话框
+                        // 不可见、不可点。close 在确认/取消后会复位。
+                        if (!active || !visible) && !close {
                             return Ok(());
                         }
                         if !render.attached() {
@@ -652,21 +669,35 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
                         }
                         // 上游把「保存 / 丢弃已完成」写进 ui.status（桌面宿主据此发
                         // ViewportCommand::Close，见 apps/vectorcraft/src/app.rs:159）。鸿蒙宿主
-                        // 没有 eframe 包装层，必须自己锁存该信号并再请求一次关窗，否则用户点完
-                        // Save / Don't Save 后窗口永远不关。CancelClose（有未保存 / 文件选择器
-                        // 占用）优先级最高，交给上游的「是否保存」对话框；用户取消则不发通知。
+                        // 没有 eframe 包装层，必须自己锁存该信号，否则用户点完 Save / Don't Save
+                        // 后窗口永远不关。CancelClose（有未保存 / 文件选择器占用）优先级最高，
+                        // 交给上游的「是否保存」对话框；用户取消则不发通知。
                         quit_requested |= app.ui.status == "quit";
                         if !terminating {
                             match close_action(validating_close, &commands, quit_requested) {
                                 CloseAction::Confirm => {
+                                    bridge::notify(
+                                        0,
+                                        "diagnostic",
+                                        "close guard: confirmed, notifying host",
+                                        &[],
+                                    );
                                     bridge::notify(0, "close", "", &[]);
                                     terminating = true;
                                 }
-                                CloseAction::Request => {
-                                    close = true;
+                                CloseAction::Cancel => {
+                                    // 上游弹了「是否保存」：窗口保留，继续出帧等用户作答。
+                                    if validating_close {
+                                        bridge::notify(
+                                            0,
+                                            "diagnostic",
+                                            "close guard: saveChanges pending, window kept",
+                                            &[],
+                                        );
+                                    }
                                     deadline = Some(Instant::now());
                                 }
-                                CloseAction::Cancel | CloseAction::None => {}
+                                CloseAction::None => {}
                             }
                         }
                         let painted = render.paint(&ctx, output)?;
@@ -675,7 +706,7 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
                         }
                         // 按 egui 的 `repaint_delay` 排下一帧：视口在动时它是 0（连续重绘），
                         // 静止时是一个很大的值或 MAX（等输入/vsync 唤醒），避免空转耗电。
-                        if painted && active && visible && render.attached() {
+                        if painted && (active || close) && visible && render.attached() {
                             deadline = match repaint_delay {
                                 Some(delay) if delay.is_zero() => Some(Instant::now()),
                                 Some(delay) if delay < Duration::from_secs(3600) => {
@@ -711,18 +742,23 @@ fn editor_frame(
     app: &mut VectorcraftApp,
     raw: egui::RawInput,
 ) -> egui::FullOutput {
-    // 与上游宿主一致：raw_input_hook 已做迭代边界 + 填充；这里 logic 相跑 tick + IME 收尾，
-    // 随后把 ui 画进 run_ui pass。只跑首帧会让界面停摆。
-    app.tick(ctx);
-    app.finish_ime_logic(ctx);
-    ctx.run_ui(raw, |ui| app.ui(ui))
+    // 与 eframe `App::logic`、web shell `logic`、GridCraft `editor_frame` 一致：logic
+    // （tick + IME 收尾）必须在 run_ui 的 pass **内**、ui() 之前，tick 才能读到本帧 raw 的
+    // viewport 状态（尤其 `close_requested()`）。放在 pass 外会读到上一帧 input，关窗事件
+    // 慢一帧，宿主当帧收不到 CancelClose 便误判「无未保存」而静默关闭窗口。
+    ctx.run_ui(raw, |ui| {
+        if ui.ctx().current_pass_index() == 0 {
+            app.tick(ui.ctx());
+            app.finish_ime_logic(ui.ctx());
+        }
+        app.ui(ui);
+    })
 }
 
 #[cfg(target_env = "ohos")]
 #[derive(Debug, PartialEq, Eq)]
 enum CloseAction {
     None,
-    Request,
     Cancel,
     Confirm,
 }
@@ -737,11 +773,14 @@ fn close_action(
         // 上游还有未保存文档或文件选择器占用：暂缓关闭，等用户在「是否保存」里作答。
         CloseAction::Cancel
     } else if validating {
-        // 本帧已注入 ViewportEvent::Close 且上游没有 CancelClose：无未保存，放行。
+        // 本帧已注入 ViewportEvent::Close 且上游没有发 CancelClose：无未保存文档，放行。
+        // 成立的前提是 tick 在本帧 run_ui pass 内（见 editor_frame），否则这一帧永远
+        // 看不到上游的 CancelClose，会把有未保存改动的窗口直接关掉。
         CloseAction::Confirm
-    } else if commands.contains(&egui::ViewportCommand::Close) || quit_requested {
-        // egui 请求关闭，或用户已选保存 / 丢弃（ui.status == "quit"）：下一帧再验证一次。
-        CloseAction::Request
+    } else if quit_requested || commands.contains(&egui::ViewportCommand::Close) {
+        // 用户已选保存 / 丢弃（ui.status == "quit"），或 egui 主动请求关闭：直接放行，
+        // 不再注入一次 ViewportEvent::Close 让上游复查（那会重复弹框）。
+        CloseAction::Confirm
     } else {
         CloseAction::None
     }
