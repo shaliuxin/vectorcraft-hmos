@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "io.github.shaliuxin.vectorcraft.hmos",
     "vendor": "vectorcraft-hmos",
-    "versionCode": 23000,
-    "versionName": "0.23.0",
+    "versionCode": 24001,
+    "versionName": "0.24.1",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }

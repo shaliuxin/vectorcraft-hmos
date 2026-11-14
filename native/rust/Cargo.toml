@@ -1,6 +1,6 @@
 [package]
 name = "vectorcraft-hmos"
-version = "0.23.0"
+version = "0.24.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = false
@@ -34,7 +34,11 @@ egui-wgpu = { version = "0.37" }
 # 丢 gles 鸿蒙就没渲染后端（同 photocraft/solidcraft/gridcraft 教训）。
 # vectorcraft 的 wgpu 版本 = 30.0.1（Cargo.lock 核实），与 gridcraft 一致，
 # 故可复用 solidcraft 验证过的 vendored wgpu-hal-30.0.1（GLES uniform-block 修补）。
-wgpu = { version = "30", default-features = false, features = ["std", "wgsl", "gles"] }
+# 钉死 30.0.1：`third_party/wgpu-hal-30.0.1` 是为该版本打的 GLES uniform-block 修补，
+# 且上游 v0.24.1 自己的 Cargo.lock 里 wgpu* 全系仍是 30.0.1。只写 "30" 时
+# `cargo generate-lockfile` 会把整条链升到 crates.io 的 30.0.2（wgpu-hal 仍是本地 30.0.1），
+# 造成渲染栈版本错配。
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "wgsl", "gles"] }
 pollster = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

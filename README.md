@@ -35,9 +35,9 @@ ArkTS（`EntryAbility` + `XComponent`）→ C++ NAPI 桥（产物 `libvectorcraf
    ├── vectorcraft/       # 上游 storytold/vectorcraft
    └── vectorcraft-hmos/  # 本仓库
    ```
-   本仓库当前对齐上游**正式版 v0.23.0**，提交 `5d0e892e2419f63bc0ea3c743ddff2e81e15fd3a`
-   （2026-11-09 发布；其 workspace 版本为 `0.23.0`，故本仓库 `versionName` = `0.23.0`、
-   `versionCode` = `23000`）。
+   本仓库当前对齐上游**正式版 v0.24.1**，提交 `f4922aa7ac99a4f6d56fc68a83a44945207ec610`
+   （2026-11-12 发布；其 workspace 版本为 `0.24.1`，故本仓库 `versionName` = `0.24.1`、
+   `versionCode` = `24001`）。
    path 依赖从 `native/rust/Cargo.toml` 出发为 `../../../vectorcraft/crates/*`。
 
    **升级上游时**：`[patch]` 只对 workspace 根生效，而本仓库的 Rust 适配层是独立
@@ -46,10 +46,18 @@ ArkTS（`EntryAbility` + `XComponent`）→ C++ NAPI 桥（产物 `libvectorcraf
    ```bash
    cargo generate-lockfile --manifest-path native/rust/Cargo.toml
    ```
-   随后 `scripts/build_native.sh` 会以 `--locked` 构建。v0.23.0 的 `[patch.crates-io]` 与
-   `0a702cc0` 完全一致（含 `linesweeper`，craft-libs rev `481f66d2…`）；漏抄会让 pathops
-   解析到 crates.io 的未打补丁版本。v0.23.0 还新增了 `jxl-oxide` / `zune-jpegxl` 依赖、
-   `craft-update` rev 改为 `1b34eba…`，因此**必须重生成锁**（本次 `[[package]]` 段 443 → 464）。
+   随后 `scripts/build_native.sh` 会以 `--locked` 构建。v0.24.1 的 `[patch.crates-io]` 与
+   v0.23.0 逐行一致（含 `linesweeper`，craft-libs rev `481f66d2…`）；漏抄会让 pathops
+   解析到 crates.io 的未打补丁版本。但 `[patch]` 一致不代表锁不变：v0.24.1 改了
+   `[workspace.dependencies]` 的 git rev（`craft-ui` → `bb8320f5…`，
+   `craft-vectorcraft-format` / `craft-update` → `6e03f65…`），并新增
+   `vectorcraft-js` / `vectorcraft-apischema` / `skrifa`，因此**必须重生成锁**
+   （本次 `[[package]]` 段 464 → 466）。
+   ⚠️ `cargo generate-lockfile` 会把 `wgpu` 全系升到 crates.io 的 30.0.2，
+   而 `third_party/wgpu-hal-30.0.1` 是 30.0.1 的 GLES uniform-block 修补。
+   适配层已把 `wgpu` 钉成 `=30.0.1`；重生成锁后仍须用
+   `cargo update -p <各 wgpu 子 crate> --precise 30.0.1` 把整条链对齐，
+   否则渲染栈版本错配（详见 `移植报告.md` §15）。
 2. **DevEco Studio**（HarmonyOS NEXT / API 26）及其 OHOS NDK。
 3. **Rust**：安装两个目标 `rustup target add aarch64-unknown-linux-ohos x86_64-unknown-linux-ohos`。
 
