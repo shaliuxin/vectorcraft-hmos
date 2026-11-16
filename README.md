@@ -4,6 +4,15 @@
 
 > 完整的移植过程与真机验证见 [`移植报告.md`](移植报告.md)（中文）。
 
+## 下载安装
+
+当前版本 **0.24.1**，可安装的未签名 HAP 由 GitHub Releases 提供：
+
+- [Release 页面（v0.24.1）](https://github.com/shaliuxin/vectorcraft-hmos/releases/tag/v0.24.1)
+- [直接下载 VectorCraft-0.24.1-unsigned.hap](https://github.com/shaliuxin/vectorcraft-hmos/releases/download/v0.24.1/VectorCraft-0.24.1-unsigned.hap)（246,004,344 B，MD5 `54c265919bdd247facb3d477b5d445ca`）
+
+未签名包需要用**你自己的 DevEco 签名证书**重签后才能安装：DevEco 自动签名生成的 Profile 绑定构建机的设备 UDID，本机签名包在别人的设备上装不上。重签步骤见下文「签名说明」。
+
 ## 真机已验证
 - wgpu（GLES/EGL 后端）出帧渲染（真机 GPU = Maleoon 916，麒麟）。
 - 全中文 UI：菜单栏 / 左侧工具栏 / 右侧「属性·图层·库」/ 状态栏，CJK 字体兜底无豆腐块。
